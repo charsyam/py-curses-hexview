@@ -5,10 +5,11 @@ import string
 
 SECTOR_SIZE = 512
 
-g_disksize = 490234751 + 1000
+g_disksize = 490234752
 if len(sys.argv) > 2:
     g_disksize = int(sys.argv[2])
 
+gdebug = False;
 
 class CursesView:
     def __init__(self, mycurses):
@@ -39,6 +40,9 @@ class CursesView:
         if end - start + 1 > self.h - 2:
             end = start + self.h - 2
 
+        if len(lines) < end - start + 1:
+            return
+
         for i in range(start, end):
             self.screen.addstr(i-start+1, 1, lines[i])
 
@@ -67,10 +71,12 @@ class MyCurses:
 
     def close(self):
         curses.endwin()
+        pass
 
 
 class HexScrollView:
     SECTOR_BLOCK_COUNT=12
+    BEFORE_BLOCK_COUNT=4
 
     def __init__(self, view, total, callback):
         self.view = view
@@ -91,11 +97,19 @@ class HexScrollView:
         if sec + HexScrollView.SECTOR_BLOCK_COUNT > self.total_sec - 1:
             block_count = self.total_sec - sec
 
-        self.lines = self.fill_buffer(sec, block_count)
-        self.current_contain_start_sec = sec
-        self.current_contain_end_sec = sec + block_count
+        fill_buffer_sec = sec
+        if sec > 0:
+            fill_buffer_sec = sec - HexScrollView.BEFORE_BLOCK_COUNT
+            if fill_buffer_sec < 0:
+                fill_buffer_sec = 0 
+
+            block_count += (sec - fill_buffer_sec)
+
+        self.lines = self.fill_buffer(fill_buffer_sec, block_count)
+        self.current_contain_start_sec = fill_buffer_sec 
+        self.current_contain_end_sec = fill_buffer_sec + block_count
         self.current_line_pos = sec * 32
-        self.current_pos_in_block = 0
+        self.current_pos_in_block = (sec - fill_buffer_sec) * 32
         self.current_sec_start_line_pos = block_count * 32
 
     def buffer_to_lines(self, buf, sec):
@@ -236,6 +250,7 @@ def run_loop(my, filename):
         if key == ord('g'):
             input_mode = True
             my.view.add_string(1, 85, "goto: ")
+            gdebug = True;
         elif key >= ord('0') and key <= ord('9') and input_mode:
             goto += chr(key)
             my.view.add_string(1, 85, "goto: " + goto)
@@ -261,10 +276,13 @@ def run_loop(my, filename):
 if __name__ == '__main__':
     my = MyCurses()
 
+    e = None
     try:
         run_loop(my, sys.argv[1])
     except:
-        print(sys.exc_info()[0])
-        pass
+        e = sys.exc_info()
 
     my.close()
+
+    if e:
+        print(e)
