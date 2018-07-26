@@ -4,19 +4,12 @@ import struct
 from py3 import PY3
 
 class Disk:
+    READ_BINARY_MODE = "rb"
     f = None
 
     def __init__(self, block_size, filename):
         self.block_size = block_size
-        self.open(filename)
-
-    def open(self, filename):
-        if PY3:
-            self.f = open(filename, encoding='latin1')
-        else:
-            self.f = open(filename)
-
-        return self.f
+        self.f = open(filename, Disk.READ_BINARY_MODE)
 
     def seek(self, lba):
         self.f.seek(lba*self.block_size)

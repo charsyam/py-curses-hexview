@@ -4,6 +4,13 @@ from disk import Disk
 import string
 
 SECTOR_SIZE = 512
+LABEL_GOTO = "goto: "
+GOTO_X = 1
+GOTO_Y = 0
+
+NONE_INPUT_MODE = 0
+HEX_INPUT_MODE = 16
+DECIMAL_INPUT_MODE = 10
 
 g_disksize = 490234752
 if len(sys.argv) > 2:
@@ -74,38 +81,35 @@ class MyCurses:
         pass
 
 
-class HexScrollView:
+class HexScrollViewSink:
     SECTOR_BLOCK_COUNT=12
     BEFORE_BLOCK_COUNT=4
 
-    def __init__(self, view, total, callback):
-        self.view = view
+    def __init__(self, max_line, total, callback):
         self.current_line_pos = 0
         self.current_pos_in_block = 0
         self.last_line_pos = total * 32 -1
         self.total_sec = total
         self.lines = None
 
-        self.max_line = view.size()[0] - 2
+        self.max_line = max_line - 2
         self.callback = callback
 
-        self.init(0)
-        self.update(0)
-
     def init(self, sec):
-        block_count = HexScrollView.SECTOR_BLOCK_COUNT
-        if sec + HexScrollView.SECTOR_BLOCK_COUNT > self.total_sec - 1:
+        block_count = HexScrollViewSink.SECTOR_BLOCK_COUNT
+        if sec + HexScrollViewSink.SECTOR_BLOCK_COUNT > self.total_sec - 1:
             block_count = self.total_sec - sec
 
         fill_buffer_sec = sec
         if sec > 0:
-            fill_buffer_sec = sec - HexScrollView.BEFORE_BLOCK_COUNT
+            fill_buffer_sec = sec - HexScrollViewSink.BEFORE_BLOCK_COUNT
             if fill_buffer_sec < 0:
                 fill_buffer_sec = 0 
 
             block_count += (sec - fill_buffer_sec)
 
         self.lines = self.fill_buffer(fill_buffer_sec, block_count)
+
         self.current_contain_start_sec = fill_buffer_sec 
         self.current_contain_end_sec = fill_buffer_sec + block_count
         self.current_line_pos = sec * 32
@@ -129,13 +133,14 @@ class HexScrollView:
             else:
                 line += " "
 
-            val = ord(buf[i])
+            val = buf[i]
             v = "{0:02x}".format(val)
             line += v
 
-            cv = buf[i]
             if val < 32 or val > 126:
                 cv = "."
+            else:
+                cv = chr(val)
 
             vline += cv
 
@@ -220,9 +225,26 @@ class HexScrollView:
         if self.current_line_pos + 32 > self.last_line_pos :
             end_target_line_pos = target_line_pos + (self.last_line_pos - self.current_line_pos)
 
-        self.view.update(self.lines, target_line_pos, end_target_line_pos)
         self.current_pos_in_block = target_line_pos
         self.current_line_pos += pos
+        return (self.lines, target_line_pos, end_target_line_pos)
+
+
+
+class HexScrollView:
+    def __init__(self, view, sink):
+        self.view = view
+        self.sink = sink
+
+        self.sink.init(0)
+        self.update(0)
+
+    def init(self, sec):
+        self.sink.init(sec)
+
+    def update(self, pos):
+        lines, start, end = self.sink.update(pos)
+        self.view.update(lines, start, end)
 
 
 class DiskCallback:
@@ -232,6 +254,17 @@ class DiskCallback:
     def callback(self, sec, number):
         return self.disk.read(sec, number)
 
+def test(filename, pos):
+    disk = Disk(SECTOR_SIZE, filename)
+    total = int((disk.size() + SECTOR_SIZE - 1) / SECTOR_SIZE)
+    mycallback = DiskCallback(disk)
+    if total == 0:
+        total = g_disksize
+
+    max_line = 80
+    sink = HexScrollViewSink(max_line, total, mycallback)
+    sink.init(pos)
+    sink.update(pos)
 
 def run_loop(my, filename):
     disk = Disk(SECTOR_SIZE, filename)
@@ -240,7 +273,9 @@ def run_loop(my, filename):
     if total == 0:
         total = g_disksize
 
-    view = HexScrollView(my.view, total, mycallback)
+    max_line = my.view.size()[0]
+    sink = HexScrollViewSink(max_line, total, mycallback)
+    view = HexScrollView(my.view, sink)
     controller = my.controller
 
     input_mode = False
@@ -248,18 +283,25 @@ def run_loop(my, filename):
     while True:
         key = controller.getch()
         if key == ord('g'):
-            input_mode = True
-            my.view.add_string(1, 85, "goto: ")
-            gdebug = True;
+            input_mode = DECIMAL_INPUT_MODE
+            my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO)
+        if key == ord('h'):
+            input_mode = HEX_INPUT_MODE
+            my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO)
         elif key >= ord('0') and key <= ord('9') and input_mode:
             goto += chr(key)
-            my.view.add_string(1, 85, "goto: " + goto)
-        elif (key == curses.KEY_ENTER or key == 10) and input_mode:
-            input_mode = False
-            igoto = int(goto)
-            goto = ""
-            view.init(igoto)
-            view.update(0)
+            my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO + goto)
+        elif (key == curses.KEY_ENTER or key == 10) and input_mode != NONE_INPUT_MODE:
+            try:
+                igoto = int(goto, input_mode)
+                goto = ""
+                view.init(igoto)
+                view.update(0)
+            except:
+                pass
+            finally:
+                input_mode = NONE_INPUT_MODE
+            
         elif key == 27:
             break
         elif key == curses.KEY_UP:
@@ -270,7 +312,7 @@ def run_loop(my, filename):
             if len(goto) > 0:
                 view.update(0)
                 goto = goto[0:-1]
-                my.view.add_string(1, 85, "goto: " + goto)
+                my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO + goto)
 
 
 if __name__ == '__main__':
