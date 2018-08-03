@@ -291,6 +291,11 @@ def run_loop(my, filename):
         elif key >= ord('0') and key <= ord('9') and input_mode:
             goto += chr(key)
             my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO + goto)
+        elif ((key >= ord('a') and key <= ord('f')) or \
+              (key >= ord('A') and key <= ord('F'))) and \
+              input_mode == HEX_INPUT_MODE:
+            goto += chr(key)
+            my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO + goto)
         elif (key == curses.KEY_ENTER or key == 10) and input_mode != NONE_INPUT_MODE:
             try:
                 igoto = int(goto, input_mode)
