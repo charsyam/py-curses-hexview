@@ -5,11 +5,11 @@ from py3 import PY3
 
 class Disk:
     READ_BINARY_MODE = "rb"
-    f = None
 
-    def __init__(self, block_size, filename):
+    def __init__(self, block_size, filename, filesize):
         self.block_size = block_size
         self.f = open(filename, Disk.READ_BINARY_MODE)
+        self.filesize = filesize
 
     def seek(self, lba):
         self.f.seek(lba*self.block_size)
@@ -18,11 +18,8 @@ class Disk:
         self.seek(lba)
         return self.f.read(self.block_size * size)
 
+    def block_count(self):
+        return int((self.size() + self.block_size- 1) / self.block_size)
+
     def size(self):
-        self.f.seek(0, 2)
-        return self.f.tell()
-
-if __name__ == "__main__":
-    disk = Disk(512, sys.argv[1])
-    print(disk.size())
-
+        return self.filesize

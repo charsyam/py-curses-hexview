@@ -1,7 +1,11 @@
-import sys
-import curses
-from disk import Disk
 import string
+import sys
+
+import curses
+
+from disk import Disk
+from drive_utils import DriveUtils
+
 
 SECTOR_SIZE = 512
 LABEL_GOTO = "goto: "
@@ -12,35 +16,20 @@ NONE_INPUT_MODE = 0
 HEX_INPUT_MODE = 16
 DECIMAL_INPUT_MODE = 10
 
-g_disksize = 490234752
-if len(sys.argv) > 2:
-    g_disksize = int(sys.argv[2])
-
 gdebug = False;
 
 class CursesView:
     def __init__(self, mycurses):
         self.mycurses = mycurses
-        self.screen = mycurses.screen
-        size = self.screen.getmaxyx()
+        size = self.mycurses.size()
         self.h = size[0]
         self.w = size[1]
-        self.init()
-
-    def init(self):
-        self.screen.border(0)
-        self.screen.keypad(1)
-        curses.noecho()
 
     def clear(self):
-        self.screen.clear()
-        self.screen.border(0)
+        self.mycurses.clear()
 
     def refresh(self):
-        self.screen.refresh()
-
-    def size(self):
-        return (self.h, self.w)
+        self.mycurses.refresh()
 
     def update(self, lines, start, end):
         self.clear()
@@ -51,20 +40,19 @@ class CursesView:
             return
 
         for i in range(start, end):
-            self.screen.addstr(i-start+1, 1, lines[i])
+            self.mycurses.addstr(i-start+1, 1, lines[i])
 
     def add_string(self, y, x, string):
-        self.screen.addstr(y, x, string)
+        self.mycurses.addstr(y, x, string)
 
 
 class CursesController:
     def __init__(self, mycurses):
         self.mycurses = mycurses
-        self.screen = mycurses.screen
 
     def getch(self):
         try:
-            key = self.screen.getch()
+            key = self.mycurses.getch()
             return key
         except:
             return 0
@@ -75,10 +63,74 @@ class MyCurses:
         self.screen = curses.initscr()
         self.view = CursesView(self)
         self.controller = CursesController(self)
+        self.init()
+        self._size = self.size()
+
+    def getch(self):
+        return self.screen.getch()
+
+    def init(self):
+        self.screen.border(0)
+        self.screen.keypad(1)
+        curses.noecho()
+
+
+    def addstr(self, y, x, value):
+        self.screen.addstr(y, x, value)
+
+    def size(self):
+        return self.screen.getmaxyx()
+
+    def height(self):
+        return self._size[0]
+
+    def width(self):
+        return self._size[1]
+
+    def clear(self):
+        self.screen.clear()
+        self.screen.border(0)
+    
+    def refresh(self):
+        self.screen.refresh()
 
     def close(self):
         curses.endwin()
+
+
+class DebugCurses:
+    def __init__(self):
+        self.view = CursesView(self)
+        self.controller = CursesController(self)
         pass
+
+    def getch(self):
+        return self.screen.getch()
+
+    def init(self):
+        pass
+
+    def addstr(self, y, x, value):
+        print("{y}:{x} - {value}\n".format(y=y, x=x, value=value))
+
+    def size(self):
+        return (80, 60)
+
+    def clear(self):
+        print("\n")
+    
+    def refresh(self):
+        print("\n")
+
+    def close(self):
+        pass
+
+    def height(self):
+        return 60
+
+    def width(self):
+        return 80
+
 
 
 class HexScrollViewSink:
@@ -254,27 +306,16 @@ class DiskCallback:
     def callback(self, sec, number):
         return self.disk.read(sec, number)
 
-def test(filename, pos):
-    disk = Disk(SECTOR_SIZE, filename)
-    total = int((disk.size() + SECTOR_SIZE - 1) / SECTOR_SIZE)
+
+def run_loop(my, fileinfo):
+    filename = fileinfo[0]
+    disksize = fileinfo[2]
+
+    disk = Disk(SECTOR_SIZE, filename, disksize)
     mycallback = DiskCallback(disk)
-    if total == 0:
-        total = g_disksize
 
-    max_line = 80
-    sink = HexScrollViewSink(max_line, total, mycallback)
-    sink.init(pos)
-    sink.update(pos)
-
-def run_loop(my, filename):
-    disk = Disk(SECTOR_SIZE, filename)
-    total = int((disk.size() + SECTOR_SIZE - 1) / SECTOR_SIZE)
-    mycallback = DiskCallback(disk)
-    if total == 0:
-        total = g_disksize
-
-    max_line = my.view.size()[0]
-    sink = HexScrollViewSink(max_line, total, mycallback)
+    max_line = my.height()
+    sink = HexScrollViewSink(max_line, disk.block_count(), mycallback)
     view = HexScrollView(my.view, sink)
     controller = my.controller
 
@@ -282,6 +323,8 @@ def run_loop(my, filename):
     goto = ""
     while True:
         key = controller.getch()
+        if key == ord('q') and not input_mode:
+            break
         if key == ord('g'):
             input_mode = DECIMAL_INPUT_MODE
             my.view.add_string(GOTO_Y, GOTO_X, LABEL_GOTO)
@@ -322,10 +365,12 @@ def run_loop(my, filename):
 
 if __name__ == '__main__':
     my = MyCurses()
-
     e = None
+
     try:
-        run_loop(my, sys.argv[1])
+        du = DriveUtils()
+        fi = du.info(sys.argv[1])
+        run_loop(my, fi)
     except:
         e = sys.exc_info()
 
